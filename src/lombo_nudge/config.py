@@ -59,8 +59,14 @@ class Config:
     state_file: str
 
 
-def _truthy(value: str) -> bool:
-    return value.strip().lower() in {"1", "true", "yes", "on"}
+def _truthy(value: str, name: str) -> bool:
+    """Strict on/off: a typo such as DRY_RUN=treu is an error, never a silent 'off'."""
+    word = value.strip().lower()
+    if word in {"1", "true", "yes", "on"}:
+        return True
+    if word in {"0", "false", "no", "off"}:
+        return False
+    raise ConfigError(f"{PREFIX}{name} must be true or false (got {value!r})")
 
 
 def _check_url(name: str, url: str) -> None:
@@ -121,7 +127,7 @@ def from_env(env: dict[str, str]) -> Config:
         radarr=radarr,
         jellyfin=jellyfin,
         webhook_url=webhook,
-        dry_run=_truthy(get("DRY_RUN", "true")),
+        dry_run=_truthy(get("DRY_RUN", "true"), "DRY_RUN"),
         interval_seconds=_number(get, "INTERVAL_SECONDS", "3600", 60),
         rules=rules,
         realert_days=_number(get, "REALERT_DAYS", "7", 1),
