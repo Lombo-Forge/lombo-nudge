@@ -31,8 +31,16 @@ REASONS: dict[str, tuple[bool, str]] = {
     "import_stuck": (True, "A download finished but was never imported."),
     "partly_here": (True, "Some episodes are here, the rest are missing and nothing has changed for days."),
     "not_in_jellyfin": (True, "Imported by Sonarr or Radarr, but Jellyfin does not list it."),
-    "seerr_out_of_sync": (True, "The files are in Jellyfin, but Seerr still shows the request as not available."),
-    "seerr_not_updated": (True, "The files are imported but Seerr still shows it as not available."),
+    "seerr_out_of_sync": (
+        True,
+        "The files are in Jellyfin, but Seerr does not show the request as available yet "
+        "(it may say processing or partly available).",
+    ),
+    "seerr_not_updated": (
+        True,
+        "The files are imported but Seerr does not show it as available yet "
+        "(it may say processing or partly available).",
+    ),
 }
 
 
