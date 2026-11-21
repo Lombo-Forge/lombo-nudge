@@ -46,7 +46,7 @@ Codes marked **stuck** are problems. The others are normal states, shown only wi
 | `import_stuck` | **yes** | A download finished but was never imported (blocked or failed import). Use Manual Import in Sonarr or Radarr; `retry` never removes it. |
 | `partly_here` | **yes** | Some requested episodes exist, the rest are missing, and the count has not changed for `LOMBO_NUDGE_PARTLY_AFTER_HOURS`. |
 | `not_in_jellyfin` | **yes** | All files are imported, but Jellyfin (asked by provider id) does not list the title. Scan the library; check the library folder and metadata. Only with Jellyfin set. |
-| `seerr_out_of_sync` | **yes** | The files are in Jellyfin but Seerr still shows the request as not available. Run the Jellyfin sync job in Seerr. Only with Jellyfin set. |
+| `seerr_out_of_sync` | **yes** | The files are in Jellyfin but Seerr does not show the request as available yet (it may say processing or partly available). Run the Jellyfin sync job in Seerr. Only with Jellyfin set. |
 | `seerr_not_updated` | **yes** | The files are imported and Seerr says not available, with no Jellyfin to confirm either way. |
 
 "Quality blocked" is detected only from the text of the queue message. A release that was never grabbed

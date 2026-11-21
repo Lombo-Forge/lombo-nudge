@@ -110,3 +110,10 @@ def test_plan_retry_actions_in_order():
     assert "seasons 1, 2" in s.message
     assert "season 1" in retry(seasons=[1]).message
     assert "(" not in retry().message
+
+
+def test_out_of_sync_message_does_not_claim_seerr_says_not_available():
+    for code in ("seerr_out_of_sync", "seerr_not_updated"):
+        text = core.REASONS[code][1]
+        assert "partly available" in text
+        assert "not available" not in text
