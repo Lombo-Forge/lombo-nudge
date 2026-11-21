@@ -114,6 +114,20 @@ def plan(cfg: Config, show_all: bool, now: float) -> int:
     return 0
 
 
+def _batches(findings: list[Finding]) -> list[list[Finding]]:
+    """Group findings so each webhook message stays within MAX_ALERT_CHARS."""
+    out: list[list[Finding]] = [[]]
+    size = 0
+    for f in findings:
+        n = min(len(core.alert_text(f.title, f.requester, f.verdict, f.days)), MAX_ALERT_CHARS) + 1
+        if out[-1] and size + n > MAX_ALERT_CHARS:
+            out.append([])
+            size = 0
+        out[-1].append(f)
+        size += n
+    return out
+
+
 def run_once(cfg: Config, now: float) -> int:
     st = state.load(cfg.state_file)
     result = _scan(cfg, st, now)
@@ -123,21 +137,23 @@ def run_once(cfg: Config, now: float) -> int:
     for f in result.findings:
         if core.should_alert(st["alerts"].get(str(f.request_id)), f.verdict.code, now, realert):
             sent.append(f)
-    delivered = False
+    delivered: list[Finding] = []
     if sent and not cfg.dry_run and cfg.webhook_url:
-        text = "\n".join(core.alert_text(f.title, f.requester, f.verdict, f.days) for f in sent)
-        try:
-            notify.send(cfg.webhook_url, text[:MAX_ALERT_CHARS])
-            delivered = True
-        except notify.NotifyError as e:  # keep the progress memory; the alert is tried again next round
-            print(f"[FAIL] {e}", file=sys.stderr)
+        # Several messages if needed; only findings in an accepted message count as alerted.
+        for batch in _batches(sent):
+            text = "\n".join(core.alert_text(f.title, f.requester, f.verdict, f.days)[:MAX_ALERT_CHARS] for f in batch)
+            try:
+                notify.send(cfg.webhook_url, text)
+            except notify.NotifyError as e:  # keep the rest; they are tried again next round
+                print(f"[FAIL] {e}", file=sys.stderr)
+                break
+            delivered += batch
     elif sent:
         print(f"({len(sent)} alert(s) not sent: {'dry run' if cfg.dry_run else 'no webhook set'})")
     # Bookkeeping: remember progress always; remember alerts only if they were really sent.
     alerts = dict(st["alerts"])
-    if delivered:
-        for f in sent:
-            alerts[str(f.request_id)] = [f.verdict.code, now]
+    for f in delivered:
+        alerts[str(f.request_id)] = [f.verdict.code, now]
     if result.complete:
         stuck_ids = {str(f.request_id) for f in result.findings if f.verdict.stuck}
         alerts = {k: v for k, v in alerts.items() if k in stuck_ids}

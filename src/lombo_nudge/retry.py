@@ -46,6 +46,9 @@ def prepare(
     if arr is None or req.get("is4k"):
         raise RetryRefused(f"{'Sonarr' if kind == 'tv' else 'Radarr'} is not set up for request {request_id}")
 
+    if kind == "tv" and not media.get("tvdbId"):
+        raise RetryRefused(f"request {request_id}: Seerr has no TVDB id for this show, so Sonarr cannot be matched")
+    seasons = [int(s["seasonNumber"]) for s in req.get("seasons") or [] if s.get("seasonNumber") is not None]
     last = state["retry"].get(str(request_id), 0)
     left = cooldown_s - (now - last) if isinstance(last, int | float) else 0
     health = arr.health()
@@ -57,6 +60,9 @@ def prepare(
         for rec in arr.queue():
             if rec.get(idkey) != item.get("id"):
                 continue
+            # Leave other people's seasons alone when Sonarr says which season a download is for.
+            if kind == "tv" and seasons and rec.get("seasonNumber") is not None and rec["seasonNumber"] not in seasons:
+                continue
             prev = state["queue"].get(f"{kind}:{rec.get('id')}")
             stalled = bool(prev and (now - prev[1]) / 3600 > rules.stall_after_h)
             queue.append(
@@ -64,7 +70,6 @@ def prepare(
                     int(rec["id"]), str(rec.get("title") or ""), rec.get("sizeleft") or 0, is_bad(rec), stalled
                 )
             )
-    seasons = [int(s["seasonNumber"]) for s in req.get("seasons") or [] if s.get("seasonNumber") is not None]
     plan = core.plan_retry(
         app=arr.name,
         in_arr=item is not None,
