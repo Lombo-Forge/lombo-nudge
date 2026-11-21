@@ -121,12 +121,21 @@ def scan(
             continue
         kind = request_kind(req)
         media = req.get("media") or {}
+        # Seerr has no separate "approved at" time. updatedAt is when the request was last changed, which is
+        # normally the approval; a later edit restarts the wait (documented in docs/how-it-works.md).
         approved = core.parse_ts(req.get("updatedAt")) or core.parse_ts(req.get("createdAt")) or now
         age_h = (now - approved) / 3600
         who = str((req.get("requestedBy") or {}).get("displayName") or "Someone")
         if req.get("is4k") or kind not in arrs:
             skipped = core.Verdict("not_checked", core.REASONS["not_checked"][1])
             findings.append(Finding(rid, f"{kind} #{rid}", who, kind, skipped, int(age_h // 24)))
+            continue
+        if kind == "tv" and not media.get("tvdbId"):
+            # Without a TVDB id the match is a guess: say so instead of reporting "missing in Sonarr".
+            msg = "Seerr has no TVDB id for this show, so it cannot be matched in Sonarr."
+            findings.append(
+                Finding(rid, f"{kind} #{rid}", who, kind, core.Verdict("not_checked", msg), int(age_h // 24))
+            )
             continue
         item = items[kind].get(media.get("tvdbId") if kind == "tv" else media.get("tmdbId"))
         files, wanted, released = _counts(kind, item, req) if item else (0, 1, True)

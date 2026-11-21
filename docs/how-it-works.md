@@ -33,7 +33,7 @@ Codes marked **stuck** are problems. The others are normal states, shown only wi
 | `not_approved` | no | The request is pending or declined. Approve it in Seerr. |
 | `available` | no | Seerr says it is available. Nothing to do. |
 | `ignored` | no | Seerr has it blocklisted or deleted. |
-| `not_checked` | no | The Sonarr or Radarr this request needs is not configured, or it is a 4K request (see the README). |
+| `not_checked` | no | The Sonarr or Radarr this request needs is not configured, or it is a 4K request (see the README), or Seerr gave no TVDB id for a show so it cannot be matched in Sonarr. |
 | `too_new` | no | Approved less than `LOMBO_NUDGE_SEARCH_AFTER_HOURS` ago, or a show with some episodes that is not yet old enough to worry about. |
 | `downloading` | no | A download is in the queue and moving (or finished and waiting for its normal import). |
 | `waiting_release` | no | The movie is not released yet (Radarr `isAvailable` is false). Nothing can be found before then. |
@@ -88,7 +88,10 @@ does it. The possible actions:
 | `client_down` | Sonarr/Radarr report the download client as unreachable: nothing is changed, so good downloads are not blocklisted. |
 | `cooldown` | Retried within `LOMBO_NUDGE_RETRY_COOLDOWN_MINUTES`. |
 
-Retry only works on requests that are approved and not yet available.
+Retry only works on requests that are approved and not yet available. For a show, only queue entries for the
+requested seasons are touched when Sonarr says which season an entry is for; an entry with no season number
+(often a single episode) cannot be told apart and is included, which is one more reason to read the dry run first.
+Request age comes from Seerr's `updatedAt` (it has no separate approval time), so editing a request restarts its wait.
 
 ## What it remembers
 

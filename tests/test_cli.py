@@ -2,9 +2,9 @@ import contextlib
 import json
 import time
 
-from conftest import request
-from lombo_nudge import state
-from lombo_nudge.cli import main
+from conftest import paged, request
+from lombo_nudge import notify, state
+from lombo_nudge.cli import MAX_ALERT_CHARS, main
 
 
 def test_bad_settings_exit_2(capsys):
@@ -252,3 +252,76 @@ def test_state_file_format(env, tmp_path):
     main(["run"], env)
     data = json.loads((tmp_path / "state.json").read_text())
     assert set(data) == {"queue", "sig", "alerts", "retry"}
+
+
+def _backlog(world, n=40):
+    reqs = [request(100 + i, "movie", 500 + i) for i in range(n)]
+    world.seerr.routes["/api/v1/request"] = paged(reqs)
+    return reqs
+
+
+def test_long_alert_is_split_and_every_request_is_announced(env, world, tmp_path):
+    _backlog(world)
+    assert main(["run"], {**env, "LOMBO_NUDGE_DRY_RUN": "false"}) == 0
+    assert len(world.hook.calls) > 1
+    texts = [c["body"]["content"] for c in world.hook.calls]
+    assert all(len(t) <= MAX_ALERT_CHARS for t in texts)
+    assert sum(t.count("Stuck request") for t in texts) == 40
+    assert len(state.load(str(tmp_path / "state.json"))["alerts"]) == 40
+
+
+def test_unsent_part_of_a_long_alert_stays_for_next_round(env, world, tmp_path, monkeypatch, capsys):
+    _backlog(world)
+    sent = []
+
+    def flaky(url, message, timeout=10):
+        if sent:
+            raise notify.NotifyError("webhook failed: down")
+        sent.append(message)
+
+    monkeypatch.setattr(notify, "send", flaky)
+    assert main(["run"], {**env, "LOMBO_NUDGE_DRY_RUN": "false"}) == 0
+    kept = state.load(str(tmp_path / "state.json"))["alerts"]
+    assert len(kept) == sent[0].count("Stuck request") < 40
+    monkeypatch.undo()
+    assert main(["run"], {**env, "LOMBO_NUDGE_DRY_RUN": "false"}) == 0
+    assert len(state.load(str(tmp_path / "state.json"))["alerts"]) == 40
+
+
+def test_tv_request_without_tvdb_id_is_not_called_missing(env, world, capsys):
+    world.seerr.routes["/api/v1/request"] = paged([request(7, "tv", 200)])
+    world.seerr.routes["/api/v1/request/7"] = request(7, "tv", 200)
+    assert main(["plan", "--all"], env) == 0
+    out = capsys.readouterr().out
+    assert "[not_checked]" in out
+    assert "TVDB" in out
+    assert "missing_in_arr" not in out
+    assert main(["retry", "7"], env) == 1
+    assert "TVDB" in capsys.readouterr().err
+    assert not [c for c in world.sonarr.calls if c["query"].get("tvdbId") == "None"]
+
+
+def test_retry_leaves_other_seasons_alone(env, world, capsys):
+    world.sonarr.routes["/api/v3/queue"] = {
+        "records": [
+            {
+                "id": 77,
+                "seriesId": 20,
+                "seasonNumber": 1,
+                "title": "S01",
+                "sizeleft": 5,
+                "trackedDownloadStatus": "warning",
+            },
+            {
+                "id": 78,
+                "seriesId": 20,
+                "seasonNumber": 3,
+                "title": "S03",
+                "sizeleft": 5,
+                "trackedDownloadStatus": "warning",
+            },
+        ],
+        "totalRecords": 2,
+    }
+    assert main(["retry", "2"], {**env, "LOMBO_NUDGE_DRY_RUN": "false"}) == 0
+    assert world.sonarr.changes()[0]["body"] == {"ids": [77]}
