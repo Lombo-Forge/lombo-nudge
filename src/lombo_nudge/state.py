@@ -5,8 +5,12 @@ file count last changed (to spot "partly here"), and which alert was sent for wh
 A missing or damaged file just means "start fresh".
 """
 
+import fcntl
 import json
 import os
+import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -39,3 +43,28 @@ def save(path: str, state: dict[str, Any]) -> None:
         raise StateError(
             f"cannot write {path}: {e}. Mount a writable folder at /data or change LOMBO_NUDGE_STATE_FILE."
         ) from e
+
+
+@contextmanager
+def locked(path: str, wait: float = 60.0) -> Iterator[None]:
+    """Hold an advisory lock (a file next to the state file) so `run` and `retry` never rewrite the state at the
+    same time. It goes away with the process, so a crash never leaves it stuck. Waits up to `wait` seconds."""
+    lock = os.path.join(os.path.dirname(path) or ".", "nudge.lock")
+    try:
+        os.makedirs(os.path.dirname(lock) or ".", exist_ok=True)
+        fd = os.open(lock, os.O_CREAT | os.O_RDWR, 0o600)
+    except OSError as e:
+        raise StateError(f"cannot take the lock {lock}: {e}. Mount a writable folder at /data.") from e
+    try:
+        deadline = time.monotonic() + wait
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    raise StateError("another run or retry is still working; try again in a minute") from None
+                time.sleep(0.05)
+        yield
+    finally:
+        os.close(fd)

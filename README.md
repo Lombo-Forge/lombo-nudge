@@ -47,14 +47,23 @@ It starts in dry-run mode and sends nothing. Run `lombo-nudge plan` to see what 
 |---|---|
 | `lombo-nudge doctor` | Checks your settings and that every service answers with its key. Exit code 1 if anything fails. |
 | `lombo-nudge plan [--all]` | Lists stuck requests and the reason for each (`--all` shows the fine ones too). Never changes anything. Alias: `check`. |
+| `lombo-nudge plan --json` | The same as a versioned JSON document for other programs ([docs/contracts.md](docs/contracts.md)). |
 | `lombo-nudge run [--loop]` | The same, then sends alerts (only when `DRY_RUN=false`). `--loop` repeats every `LOMBO_NUDGE_INTERVAL_SECONDS`. |
 | `lombo-nudge retry ID` | Shows what a retry of one request would do: remove and blocklist failed downloads and search again, or just search. Applies it only when `DRY_RUN=false`. |
+| `lombo-nudge serve` | A small HTTP API for a page or another tool: read the findings, preview or trigger a retry. Needs `LOMBO_NUDGE_API_TOKEN`. See [docs/contracts.md](docs/contracts.md) and [docs/security.md](docs/security.md). |
+
+`run` also writes `findings.json` next to the state file after every round (also in dry run), so a page can just read that file.
 
 Every reason code is explained in [docs/how-it-works.md](docs/how-it-works.md).
 
 ## Settings
 
 Everything is an environment variable, listed with defaults in [.env.example](.env.example). Thresholds (hours before "nothing found", "partly here", "stalled"), the re-alert wait and the retry cooldown are settings too. More in [docs/setup.md](docs/setup.md).
+
+| Setting | Default | What it does |
+|---|---|---|
+| `LOMBO_NUDGE_API_TOKEN` | empty | The token `serve` requires on every request. Empty means `serve` refuses to start. At least 24 visible characters, no spaces (`openssl rand -hex 32`). |
+| `LOMBO_NUDGE_API_BIND` | `127.0.0.1:8095` | Where `serve` listens: an IP address and a port. `doctor` warns when it is not loopback. |
 
 ## What is not verified
 
