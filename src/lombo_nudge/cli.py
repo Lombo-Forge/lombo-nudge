@@ -1,12 +1,14 @@
 """Command line: doctor, plan (alias check), run, retry. Talks to the outside world; core.py decides.
 
 lombo-nudge doctor          check the settings and that every service answers; exit 1 on any failure
-lombo-nudge plan [--all]    list stuck requests and why; changes nothing, ever (alias: check)
+lombo-nudge plan [--all|--json]  list stuck requests and why; changes nothing, ever (alias: check)
 lombo-nudge run [--loop]    same, then send alerts (only when DRY_RUN=false); --loop repeats every INTERVAL_SECONDS
 lombo-nudge retry ID        show what a retry of request ID would do; with DRY_RUN=false, do it
+lombo-nudge serve           small HTTP API: GET /v1/findings, GET and POST /v1/retry (needs API_TOKEN)
 """
 
 import argparse
+import json
 import os
 import sys
 import time
@@ -14,9 +16,9 @@ from collections.abc import Callable
 from functools import partial
 from typing import Any
 
-from . import __version__, core, notify, retry, state
+from . import __version__, api, core, findings, notify, retry, state
 from .clients import Arr, Seerr
-from .config import Config, ConfigError, from_env
+from .config import Config, ConfigError, from_env, is_loopback, parse_bind, token_problem
 from .http import ApiError
 from .jellyfin import Jellyfin
 from .scan import Finding, Scan, scan
@@ -74,6 +76,16 @@ def doctor(cfg: Config) -> int:
     except state.StateError as e:
         print(f"[FAIL] state file: {e}")
         ok = False
+    problem = token_problem(cfg.api_token)
+    if cfg.api_token and problem:
+        print(f"[FAIL] API token: {problem}")
+        ok = False
+    elif problem:
+        print("[ ok ] API: off (no LOMBO_NUDGE_API_TOKEN, so `serve` will not start)")
+    else:
+        print(f"[ ok ] API: `serve` would listen on {cfg.api_bind}")
+        if not is_loopback(parse_bind(cfg.api_bind)[0]):
+            print("[warn] API bind is not loopback: use it only on a private network, never published to the internet")
     print(f"[ ok ] mode: {'dry run (nothing is sent or changed)' if cfg.dry_run else 'LIVE'}")
     return 0 if ok else 1
 
@@ -109,7 +121,17 @@ def _print(result: Scan, show_all: bool) -> None:
         print("note: the request list was cut short; the result may be incomplete.")
 
 
-def plan(cfg: Config, show_all: bool, now: float) -> int:
+def findings_doc(cfg: Config, now: float) -> dict[str, Any]:
+    """The findings document, made now from a fresh scan. Writes nothing."""
+    st = state.load(cfg.state_file)
+    result = _scan(cfg, st, now)
+    return findings.build(result.findings, result.complete, st["alerts"], now)
+
+
+def plan(cfg: Config, show_all: bool, now: float, as_json: bool = False) -> int:
+    if as_json:
+        print(json.dumps(findings_doc(cfg, now), indent=2))
+        return 0
     _print(_scan(cfg, state.load(cfg.state_file), now), show_all)
     return 0
 
@@ -129,6 +151,11 @@ def _batches(findings: list[Finding]) -> list[list[Finding]]:
 
 
 def run_once(cfg: Config, now: float) -> int:
+    with state.locked(cfg.state_file):  # not at the same time as a retry from the API
+        return _round(cfg, now)
+
+
+def _round(cfg: Config, now: float) -> int:
     st = state.load(cfg.state_file)
     result = _scan(cfg, st, now)
     _print(result, False)
@@ -158,26 +185,61 @@ def run_once(cfg: Config, now: float) -> int:
         stuck_ids = {str(f.request_id) for f in result.findings if f.verdict.stuck}
         alerts = {k: v for k, v in alerts.items() if k in stuck_ids}
     state.save(cfg.state_file, {**st, "queue": result.queue, "sig": result.sig, "alerts": alerts})
+    try:  # a description of what exists (also in dry run); failing to write it never fails the round
+        findings.write(findings.path_for(cfg.state_file), findings.build(result.findings, result.complete, alerts, now))
+    except OSError as e:
+        print(f"[warn] cannot write {findings.FILE_NAME}: {e}", file=sys.stderr)
     return 0
 
 
-def do_retry(cfg: Config, request_id: int, now: float) -> int:
-    st = state.load(cfg.state_file)
-    try:
+def retry_once(cfg: Config, request_id: int, now: float, apply: bool = True) -> retry.Outcome:
+    """Prepare a retry and, when `apply` and not a dry run, do it. Under the state lock, so two retries (or a
+    retry and a round) never overwrite each other and the cool-down is read after the one before it."""
+    with state.locked(cfg.state_file):
+        st = state.load(cfg.state_file)
         p = retry.prepare(_seerr(cfg), _arrs(cfg), st, request_id, now, cfg.rules, cfg.retry_cooldown_minutes * 60)
+        changed = False
+        if apply and not cfg.dry_run and retry.apply(p):
+            st["retry"][str(request_id)] = now
+            state.save(cfg.state_file, st)
+            changed = True
+        return retry.Outcome(p.plan.action, p.plan.message, retry.describe(p), changed)
+
+
+def do_retry(cfg: Config, request_id: int, now: float) -> int:
+    try:
+        out = retry_once(cfg, request_id, now)
     except retry.RetryRefused as e:
         print(f"[FAIL] {e}", file=sys.stderr)
         return 1
-    print(f"{p.plan.action}: {p.plan.message}")
-    for name in p.plan.releases:
-        print(f"  - {name}")
+    print("\n".join(out.lines))
     if cfg.dry_run:
         print("(dry run: nothing was changed. Set LOMBO_NUDGE_DRY_RUN=false to apply.)")
-        return 0
-    if retry.apply(p):
-        st["retry"][str(request_id)] = now
-        state.save(cfg.state_file, st)
+    elif out.changed:
         print("Done.")
+    return 0
+
+
+def serve(cfg: Config) -> int:
+    """Run the HTTP API until stopped. Refuses to start without a good token."""
+    problem = token_problem(cfg.api_token)
+    if problem:
+        print(f"[FAIL] serve: {problem}", file=sys.stderr)
+        return 1
+    if not is_loopback(parse_bind(cfg.api_bind)[0]):
+        print("[warn] API bind is not loopback: use it only on a private network.", file=sys.stderr)
+    server = api.make_server(
+        cfg,
+        lambda: findings_doc(cfg, time.time()),
+        lambda request_id, apply: retry_once(cfg, request_id, time.time(), apply),
+    )
+    print(f"lombo-nudge API on {cfg.api_bind} ({'dry run' if cfg.dry_run else 'LIVE'})", flush=True)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
     return 0
 
 
@@ -187,7 +249,10 @@ def main(argv: list[str] | None = None, env: dict[str, str] | None = None) -> in
     sub = p.add_subparsers(dest="cmd", required=True)
     sub.add_parser("doctor")
     for name in ("plan", "check"):
-        sub.add_parser(name).add_argument("--all", action="store_true", help="also list requests that are fine")
+        sp = sub.add_parser(name)
+        sp.add_argument("--all", action="store_true", help="also list requests that are fine")
+        sp.add_argument("--json", action="store_true", help="print the findings document (docs/contracts.md)")
+    sub.add_parser("serve")
     run = sub.add_parser("run")
     run.add_argument("--loop", action="store_true")
     sub.add_parser("retry").add_argument("request_id", type=int)
@@ -203,7 +268,9 @@ def main(argv: list[str] | None = None, env: dict[str, str] | None = None) -> in
         if args.cmd == "doctor":
             return doctor(cfg)
         if args.cmd in ("plan", "check"):
-            return plan(cfg, args.all, time.time())
+            return plan(cfg, args.all, time.time(), args.json)
+        if args.cmd == "serve":
+            return serve(cfg)
         if args.cmd == "retry":
             return do_retry(cfg, args.request_id, time.time())
         while True:

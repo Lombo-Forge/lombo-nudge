@@ -6,6 +6,7 @@ from typing import Any
 
 from . import core
 from .clients import Arr, Seerr
+from .findings import clean
 from .http import ApiError
 from .scan import is_bad, request_kind
 
@@ -80,6 +81,20 @@ def prepare(
         max_seasons=MAX_SEASON_SEARCHES,
     )
     return Prepared(plan, arr, item.get("id") if item else None, sorted(set(seasons))[:MAX_SEASON_SEARCHES])
+
+
+@dataclass(frozen=True)
+class Outcome:
+    """What a retry did (or, in a dry run or a look, would do), as the lines `retry ID` prints."""
+
+    action: str
+    message: str
+    lines: tuple[str, ...]
+    changed: bool = False
+
+
+def describe(p: Prepared) -> tuple[str, ...]:
+    return (f"{p.plan.action}: {p.plan.message}", *(f"  - {clean(name)}" for name in p.plan.releases))
 
 
 def apply(p: Prepared) -> bool:

@@ -7,6 +7,7 @@
 - [Choosing when it speaks](#choosing-when-it-speaks)
 - [Webhooks](#webhooks)
 - [Running without Docker](#running-without-docker)
+- [For a page or another tool (optional)](#for-a-page-or-another-tool-optional)
 
 ## What you need
 
@@ -47,3 +48,10 @@ lombo-nudge run --loop
 ```
 
 Set `LOMBO_NUDGE_STATE_FILE` to a path you can write.
+
+## For a page or another tool (optional)
+
+Set `LOMBO_NUDGE_API_TOKEN` (`openssl rand -hex 32`) and run `lombo-nudge serve` next to `run --loop`. It listens on
+`LOMBO_NUDGE_API_BIND`. The findings are also written to `findings.json` beside the state file after every round,
+with no token needed to read it. The shape of both and the retry call are in [contracts.md](contracts.md); read
+[security.md](security.md) before exposing it to anything beyond the same machine.

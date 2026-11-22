@@ -4,6 +4,7 @@ Every setting has a LOMBO_NUDGE_ prefix so it never collides with another contai
 A bad value stops the app at start-up with a message that names the variable.
 """
 
+import ipaddress
 from collections.abc import Callable
 from dataclasses import dataclass
 from urllib.parse import urlparse
@@ -31,7 +32,12 @@ SETTINGS = (
     "REALERT_DAYS",
     "RETRY_COOLDOWN_MINUTES",
     "STATE_FILE",
+    "API_TOKEN",
+    "API_BIND",
 )
+
+TOKEN_MIN = 24
+DEFAULT_BIND = "127.0.0.1:8095"
 
 
 class ConfigError(Exception):
@@ -57,6 +63,8 @@ class Config:
     realert_days: int
     retry_cooldown_minutes: int
     state_file: str
+    api_token: str = ""  # `serve` needs it (see token_problem); empty means the API is off
+    api_bind: str = DEFAULT_BIND  # host:port `serve` listens on
 
 
 def _truthy(value: str, name: str) -> bool:
@@ -98,6 +106,35 @@ def _number(get: Callable[..., str], name: str, default: str, minimum: int) -> i
     return n
 
 
+def parse_bind(value: str) -> tuple[str, int]:
+    """'ip:port' (or '[::1]:port') as (host, port). The host must be an IP address. Raises ConfigError."""
+    host, sep, port_text = value.rpartition(":")
+    host = host.strip("[]")
+    try:
+        ipaddress.ip_address(host)
+        ok = bool(sep) and port_text.isdigit() and 1 <= int(port_text) <= 65535
+    except ValueError:
+        ok = False
+    if not ok:
+        raise ConfigError(f"{PREFIX}API_BIND must look like 127.0.0.1:8095 (an IP address, a colon, a port 1 to 65535)")
+    return host, int(port_text)
+
+
+def is_loopback(host: str) -> bool:
+    return ipaddress.ip_address(host).is_loopback
+
+
+def token_problem(token: str) -> str | None:
+    """Why this token cannot be used, or None when it can."""
+    if not token:
+        return f"{PREFIX}API_TOKEN is not set. Make a long random one (for example `openssl rand -hex 32`)."
+    if len(token) < TOKEN_MIN:
+        return f"{PREFIX}API_TOKEN is too short: use at least {TOKEN_MIN} characters (`openssl rand -hex 32`)."
+    if not all(33 <= ord(c) <= 126 for c in token):
+        return f"{PREFIX}API_TOKEN must be printable ASCII with no spaces."
+    return None
+
+
 def from_env(env: dict[str, str]) -> Config:
     def get(name: str, default: str = "") -> str:
         return (env.get(PREFIX + name) or default).strip()
@@ -120,6 +157,8 @@ def from_env(env: dict[str, str]) -> Config:
         stall_after_h=_number(get, "STALL_AFTER_HOURS", "12", 1),
     )
     state = get("STATE_FILE", "/data/state.json")
+    bind = get("API_BIND", DEFAULT_BIND)
+    parse_bind(bind)  # a bad address stops the app at start-up like any other setting
     # Safe by default: nothing is sent or changed until the person sets DRY_RUN=false.
     return Config(
         seerr=seerr,
@@ -133,4 +172,6 @@ def from_env(env: dict[str, str]) -> Config:
         realert_days=_number(get, "REALERT_DAYS", "7", 1),
         retry_cooldown_minutes=_number(get, "RETRY_COOLDOWN_MINUTES", "30", 1),
         state_file=state,
+        api_token=get("API_TOKEN"),
+        api_bind=bind,
     )

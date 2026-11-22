@@ -8,6 +8,7 @@
 - [Alerts](#alerts)
 - [Retry](#retry)
 - [What it remembers](#what-it-remembers)
+- [For other programs](#for-other-programs)
 
 ## The loop
 
@@ -99,3 +100,13 @@ One JSON file (`LOMBO_NUDGE_STATE_FILE`): when each queue item last changed size
 file count last changed, which alert was sent, and the last retry time. Delete it any time; it only
 means stalls are measured from the next round and alerts may repeat once. `plan` reads it but never
 writes it.
+
+`findings.json` (next to the state file) is a description of what exists, rewritten after every round of `run`, so
+it is also written in dry run. `run` and `retry` (from the command line or the API) take a lock file
+(`nudge.lock`, in the same folder) before they read and write the state, so they never overwrite each other.
+
+## For other programs
+
+`lombo-nudge plan --json`, `findings.json` and `lombo-nudge serve` give the stuck requests as a versioned JSON
+document, and let a tool preview or trigger a retry. The exact shape and the promises are in
+[contracts.md](contracts.md); what the API trusts and refuses is in [security.md](security.md).
