@@ -147,7 +147,7 @@ def plan(cfg: Config, show_all: bool, now: float, as_json: bool = False) -> int:
     if cfg.decline_after_days:
         since = _stuck_since(st, result, now)
         for f in result.findings:
-            if f.verdict.code in core.DECLINABLE:
+            if _declinable(f):
                 left = cfg.decline_after_days - (now - since[str(f.request_id)]) / 86400
                 print(f"#{f.request_id} would be declined in {max(math.ceil(left), 0)} day(s) if nothing arrives")
     return 0
@@ -167,13 +167,13 @@ def _batches(findings: list[Finding]) -> list[list[Finding]]:
     return out
 
 
+def _declinable(f: Finding) -> bool:
+    return f.verdict.code in core.DECLINABLE and not f.releasing
+
+
 def _stuck_since(st: dict[str, Any], result: Scan, now: float) -> dict[str, float]:
     """Since when each request has had nothing arriving. A cut-off request list forgets nothing."""
-    since = {
-        str(f.request_id): st["stuck"].get(str(f.request_id), now)
-        for f in result.findings
-        if f.verdict.code in core.DECLINABLE
-    }
+    since = {str(f.request_id): st["stuck"].get(str(f.request_id), now) for f in result.findings if _declinable(f)}
     return since if result.complete else {**st["stuck"], **since}
 
 
@@ -191,11 +191,7 @@ def _decline(cfg: Config, st: dict[str, Any], result: Scan, since: dict[str, flo
     """Decline requests that have had nothing arriving for DECLINE_AFTER_DAYS. Returns those declined and
     records them in `st["declined"]`."""
     wait = cfg.decline_after_days * 86400
-    due = [
-        f
-        for f in result.findings
-        if f.verdict.code in core.DECLINABLE and now - since.get(str(f.request_id), now) >= wait
-    ]
+    due = [f for f in result.findings if _declinable(f) and now - since.get(str(f.request_id), now) >= wait]
     if not wait or not due:
         return []
     why = _searching_is_broken(cfg)

@@ -115,8 +115,9 @@ document, and let a tool preview or trigger a retry. The exact shape and the pro
 ## Declining what never arrives
 
 Off by default. With `LOMBO_NUDGE_DECLINE_AFTER_DAYS=7`, a request that has had nothing arriving for seven days
-(`not_found`, `partly_here` or `missing_in_arr`) is declined in Seerr, so it leaves the stuck list. Seerr tells the
-person; they can request it again. Episodes already there stay, and nothing is removed from Sonarr or Radarr.
+(`not_found` or `missing_in_arr`) is declined in Seerr, so it leaves the stuck list. Seerr tells the person; they
+can request it again. A partly arrived show is never declined, nor is a show still releasing (anything Sonarr does not mark "ended",
+including one between seasons, or one Sonarr does not have). Nothing is removed from Sonarr or Radarr.
 
 - The days are counted from when LomboNudge first saw it that way, not from the request date. A `retry` starts them again.
 - Nothing is declined while Sonarr or Radarr report that indexers or the download client are failing.

@@ -47,9 +47,9 @@ REASONS: dict[str, tuple[bool, str]] = {
 }
 
 
-# Stuck reasons where nothing is arriving, so a request may be declined (DECLINE_AFTER_DAYS). Never one whose files
-# are already there, or with a download in the queue.
-DECLINABLE = frozenset({"not_found", "partly_here", "missing_in_arr"})
+# Stuck reasons where nothing has arrived at all, so a request may be declined (DECLINE_AFTER_DAYS). Never one with
+# files already there (a partly arrived show keeps being tracked) or with a download in the queue.
+DECLINABLE = frozenset({"not_found", "missing_in_arr"})
 DECLINES_PER_DAY = 3  # a broken indexer must not empty the whole request list in one go
 
 
