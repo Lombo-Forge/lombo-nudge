@@ -1,3 +1,3 @@
 """LomboNudge: a Lombo-Forge app for Jellyfin."""
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"

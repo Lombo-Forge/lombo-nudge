@@ -1,7 +1,8 @@
 """The small JSON file that remembers what the program saw last time.
 
-It holds three things: when each queue item last made progress (to spot stalls), when each request's
-file count last changed (to spot "partly here"), and which alert was sent for which request.
+It holds: when each queue item last made progress (to spot stalls), when each request's
+file count last changed (to spot "partly here"), which alert was sent for which request, and since when a
+request has had nothing arriving (and which were declined for it).
 A missing or damaged file just means "start fresh".
 """
 
@@ -20,7 +21,7 @@ class StateError(Exception):
 
 
 def empty() -> dict[str, Any]:
-    return {"queue": {}, "sig": {}, "alerts": {}, "retry": {}}
+    return {"queue": {}, "sig": {}, "alerts": {}, "retry": {}, "stuck": {}, "declined": {}}
 
 
 def load(path: str) -> dict[str, Any]:

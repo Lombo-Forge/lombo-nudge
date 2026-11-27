@@ -1,5 +1,5 @@
-"""Seerr, Sonarr and Radarr clients. Read-only except Arr.delete_queue() and Arr.command(), which only
-the retry command calls (and only when DRY_RUN=false)."""
+"""Seerr, Sonarr and Radarr clients. Read-only except Arr.delete_queue() and Arr.command() (the retry
+command) and Seerr.decline() (DECLINE_AFTER_DAYS), all only when DRY_RUN=false."""
 
 from typing import Any, cast
 
@@ -41,6 +41,9 @@ class Seerr(Client):
             if len(got) < PAGE:
                 return out, True
         return out, False
+
+    def decline(self, request_id: int) -> None:
+        self.request("POST", f"/api/v1/request/{request_id}/decline")
 
     def title(self, kind: str, tmdb_id: int | None) -> str:
         if tmdb_id is None:

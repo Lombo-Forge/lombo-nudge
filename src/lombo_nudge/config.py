@@ -32,6 +32,7 @@ SETTINGS = (
     "PARTLY_AFTER_HOURS",
     "STALL_AFTER_HOURS",
     "REALERT_DAYS",
+    "DECLINE_AFTER_DAYS",
     "RETRY_COOLDOWN_MINUTES",
     "STATE_FILE",
     "API_TOKEN",
@@ -67,6 +68,7 @@ class Config:
     state_file: str
     api_token: str = ""  # `serve` needs it (see token_problem); empty means the API is off
     api_bind: str = DEFAULT_BIND  # host:port `serve` listens on
+    decline_after_days: int = 0  # 0 = never decline anything
     radarr_4k: Service | None = None  # a second Radarr that gets the 4K movie requests
 
 
@@ -182,4 +184,5 @@ def from_env(env: dict[str, str]) -> Config:
         api_token=get("API_TOKEN"),
         api_bind=bind,
         radarr_4k=_service(get, "RADARR_4K"),
+        decline_after_days=_number(get, "DECLINE_AFTER_DAYS", "0", 0),
     )
