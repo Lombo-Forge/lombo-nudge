@@ -22,6 +22,7 @@ class Finding:
     kind: str
     verdict: core.Verdict
     days: int
+    releasing: bool = False  # a show Sonarr does not mark "ended": never declined
 
 
 @dataclass(frozen=True)
@@ -171,5 +172,6 @@ def scan(
             facts = replace(facts, in_jellyfin=found)
             verdict = core.classify(facts, rules)
         title = seerr.title(kind, media.get("tmdbId")) if verdict.stuck else f"{kind} #{rid}"
-        findings.append(Finding(rid, title, who, kind, verdict, int(age_h // 24)))
+        releasing = kind == "tv" and (item or {}).get("status") != "ended"
+        findings.append(Finding(rid, title, who, kind, verdict, int(age_h // 24), releasing))
     return Scan(findings, seen, sigs, complete)

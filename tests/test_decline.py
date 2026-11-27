@@ -2,6 +2,8 @@
 
 import time
 
+import pytest
+
 from lombo_nudge import cli
 from lombo_nudge.config import from_env
 
@@ -67,3 +69,26 @@ def test_a_retry_starts_the_wait_again(world, env):
     cli.run_once(cfg, now + 6 * DAY + 1)
     cli.run_once(cfg, now + 8 * DAY)
     assert "/api/v1/request/1/decline" not in declines(world)
+
+
+def test_a_partly_arrived_show_is_never_declined(world, env):
+    show = world.sonarr.routes["/api/v3/series"][0]
+    show["seasons"][0]["statistics"]["episodeFileCount"] = 5
+    world.sonarr.routes["/api/v3/queue"] = {"records": [], "totalRecords": 0}
+    cfg, now = cfg_for(env), time.time()
+    for day in (0, 4, 12, 20):
+        cli.run_once(cfg, now + day * DAY)
+    assert [f["reason"] for f in cli.findings_doc(cfg, now + 20 * DAY)["findings"] if f["request_id"] == 2] == [
+        "partly_here"
+    ]
+    assert "/api/v1/request/2/decline" not in declines(world)
+
+
+@pytest.mark.parametrize(("status", "declined"), [("continuing", False), ("upcoming", False), ("ended", True)])
+def test_a_show_still_releasing_is_never_declined(world, env, status, declined):
+    world.sonarr.routes["/api/v3/series"][0]["status"] = status
+    world.sonarr.routes["/api/v3/queue"] = {"records": [], "totalRecords": 0}  # nothing found for request 2
+    cfg, now = cfg_for(env), time.time()
+    cli.run_once(cfg, now)
+    cli.run_once(cfg, now + 8 * DAY)
+    assert ("/api/v1/request/2/decline" in declines(world)) is declined
