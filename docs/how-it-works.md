@@ -34,7 +34,7 @@ Codes marked **stuck** are problems. The others are normal states, shown only wi
 | `not_approved` | no | The request is pending or declined. Approve it in Seerr. |
 | `available` | no | Seerr says it is available. Nothing to do. |
 | `ignored` | no | Seerr has it blocklisted or deleted. |
-| `not_checked` | no | The Sonarr or Radarr this request needs is not configured, or it is a 4K request (see the README), or Seerr gave no TVDB id for a show so it cannot be matched in Sonarr. |
+| `not_checked` | no | The Sonarr or Radarr this request needs is not configured (a 4K movie needs the 4K Radarr; 4K shows are skipped), or Seerr gave no TVDB id for a show so it cannot be matched in Sonarr. |
 | `too_new` | no | Approved less than `LOMBO_NUDGE_SEARCH_AFTER_HOURS` ago, or a show with some episodes that is not yet old enough to worry about. |
 | `downloading` | no | A download is in the queue and moving (or finished and waiting for its normal import). |
 | `waiting_release` | no | The movie is not released yet (Radarr `isAvailable` is false). Nothing can be found before then. |

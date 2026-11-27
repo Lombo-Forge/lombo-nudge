@@ -21,6 +21,8 @@ SETTINGS = (
     "SONARR_API_KEY",
     "RADARR_URL",
     "RADARR_API_KEY",
+    "RADARR_4K_URL",
+    "RADARR_4K_API_KEY",
     "JELLYFIN_URL",
     "JELLYFIN_API_KEY",
     "WEBHOOK_URL",
@@ -65,6 +67,7 @@ class Config:
     state_file: str
     api_token: str = ""  # `serve` needs it (see token_problem); empty means the API is off
     api_bind: str = DEFAULT_BIND  # host:port `serve` listens on
+    radarr_4k: Service | None = None  # a second Radarr that gets the 4K movie requests
 
 
 def _truthy(value: str, name: str) -> bool:
@@ -89,10 +92,14 @@ def _service(get: Callable[..., str], app: str, required: bool = False) -> Servi
     if not url and (not key or key == "changeme") and not required:
         return None
     if not url:
-        raise ConfigError(f"{PREFIX}{app}_URL is not set. It is the address of {app.title()} as this app sees it.")
+        raise ConfigError(
+            f"{PREFIX}{app}_URL is not set. It is the address of {app.replace('_', ' ').title()} as this app sees it."
+        )
     _check_url(f"{app}_URL", url)
     if not key or key == "changeme":
-        raise ConfigError(f"{PREFIX}{app}_API_KEY is not set. Find it in {app.title()}: Settings > General.")
+        raise ConfigError(
+            f"{PREFIX}{app}_API_KEY is not set. Find it in {app.replace('_', ' ').title()}: Settings > General."
+        )
     return Service(url, key)
 
 
@@ -174,4 +181,5 @@ def from_env(env: dict[str, str]) -> Config:
         state_file=state,
         api_token=get("API_TOKEN"),
         api_bind=bind,
+        radarr_4k=_service(get, "RADARR_4K"),
     )
