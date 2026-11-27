@@ -47,6 +47,12 @@ REASONS: dict[str, tuple[bool, str]] = {
 }
 
 
+# Stuck reasons where nothing is arriving, so a request may be declined (DECLINE_AFTER_DAYS). Never one whose files
+# are already there, or with a download in the queue.
+DECLINABLE = frozenset({"not_found", "partly_here", "missing_in_arr"})
+DECLINES_PER_DAY = 3  # a broken indexer must not empty the whole request list in one go
+
+
 @dataclass(frozen=True)
 class Rules:
     """Thresholds in hours. Config builds this from the LOMBO_NUDGE_* settings."""

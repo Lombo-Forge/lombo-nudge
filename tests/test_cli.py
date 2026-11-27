@@ -251,7 +251,7 @@ def test_retry_client_down_and_missing(env, world, capsys):
 def test_state_file_format(env, tmp_path):
     main(["run"], env)
     data = json.loads((tmp_path / "state.json").read_text())
-    assert set(data) == {"queue", "sig", "alerts", "retry"}
+    assert set(data) == {"queue", "sig", "alerts", "retry", "stuck", "declined"}
 
 
 def _backlog(world, n=40):

@@ -9,6 +9,7 @@
 - [Retry](#retry)
 - [What it remembers](#what-it-remembers)
 - [For other programs](#for-other-programs)
+- [Declining what never arrives](#declining-what-never-arrives)
 
 ## The loop
 
@@ -97,8 +98,8 @@ Request age comes from Seerr's `updatedAt` (it has no separate approval time), s
 ## What it remembers
 
 One JSON file (`LOMBO_NUDGE_STATE_FILE`): when each queue item last changed size, when each request's
-file count last changed, which alert was sent, and the last retry time. Delete it any time; it only
-means stalls are measured from the next round and alerts may repeat once. `plan` reads it but never
+file count last changed, which alert was sent, the last retry time, and since when nothing has arrived. Delete it any time; it only
+means stalls and decline waits are measured from the next round and alerts may repeat once. `plan` reads it but never
 writes it.
 
 `findings.json` (next to the state file) is a description of what exists, rewritten after every round of `run`, so
@@ -110,3 +111,13 @@ it is also written in dry run. `run` and `retry` (from the command line or the A
 `lombo-nudge plan --json`, `findings.json` and `lombo-nudge serve` give the stuck requests as a versioned JSON
 document, and let a tool preview or trigger a retry. The exact shape and the promises are in
 [contracts.md](contracts.md); what the API trusts and refuses is in [security.md](security.md).
+
+## Declining what never arrives
+
+Off by default. With `LOMBO_NUDGE_DECLINE_AFTER_DAYS=7`, a request that has had nothing arriving for seven days
+(`not_found`, `partly_here` or `missing_in_arr`) is declined in Seerr, so it leaves the stuck list. Seerr tells the
+person; they can request it again. Episodes already there stay, and nothing is removed from Sonarr or Radarr.
+
+- The days are counted from when LomboNudge first saw it that way, not from the request date. A `retry` starts them again.
+- Nothing is declined while Sonarr or Radarr report that indexers or the download client are failing.
+- At most 3 a day. Dry run only prints `would decline`. `plan` shows how many days each one has left.

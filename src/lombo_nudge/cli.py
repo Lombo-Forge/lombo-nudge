@@ -9,10 +9,12 @@ lombo-nudge serve           small HTTP API: GET /v1/findings, GET and POST /v1/r
 
 import argparse
 import json
+import math
 import os
 import sys
 import time
 from collections.abc import Callable
+from dataclasses import replace
 from functools import partial
 from typing import Any
 
@@ -89,6 +91,10 @@ def doctor(cfg: Config) -> int:
         print(f"[ ok ] API: `serve` would listen on {cfg.api_bind}")
         if not is_loopback(parse_bind(cfg.api_bind)[0]):
             print("[warn] API bind is not loopback: use it only on a private network, never published to the internet")
+    if cfg.decline_after_days:
+        print(f"[ ok ] declines: requests with nothing arriving for {cfg.decline_after_days} days")
+    else:
+        print("[ ok ] declines: off (LOMBO_NUDGE_DECLINE_AFTER_DAYS=0)")
     print(f"[ ok ] mode: {'dry run (nothing is sent or changed)' if cfg.dry_run else 'LIVE'}")
     return 0 if ok else 1
 
@@ -135,7 +141,15 @@ def plan(cfg: Config, show_all: bool, now: float, as_json: bool = False) -> int:
     if as_json:
         print(json.dumps(findings_doc(cfg, now), indent=2))
         return 0
-    _print(_scan(cfg, state.load(cfg.state_file), now), show_all)
+    st = state.load(cfg.state_file)
+    result = _scan(cfg, st, now)
+    _print(result, show_all)
+    if cfg.decline_after_days:
+        since = _stuck_since(st, result, now)
+        for f in result.findings:
+            if f.verdict.code in core.DECLINABLE:
+                left = cfg.decline_after_days - (now - since[str(f.request_id)]) / 86400
+                print(f"#{f.request_id} would be declined in {max(math.ceil(left), 0)} day(s) if nothing arrives")
     return 0
 
 
@@ -153,6 +167,60 @@ def _batches(findings: list[Finding]) -> list[list[Finding]]:
     return out
 
 
+def _stuck_since(st: dict[str, Any], result: Scan, now: float) -> dict[str, float]:
+    """Since when each request has had nothing arriving. A cut-off request list forgets nothing."""
+    since = {
+        str(f.request_id): st["stuck"].get(str(f.request_id), now)
+        for f in result.findings
+        if f.verdict.code in core.DECLINABLE
+    }
+    return since if result.complete else {**st["stuck"], **since}
+
+
+def _searching_is_broken(cfg: Config) -> str:
+    """Why "nothing found" cannot be trusted right now, or ""."""
+    for arr in _arrs(cfg).values():
+        for h in arr.health():
+            source = str(h.get("source"))
+            if source in retry.CLIENT_DOWN or (source.startswith("Indexer") and h.get("type") == "error"):
+                return f"{arr.name} reports: {h.get('message') or source}"
+    return ""
+
+
+def _decline(cfg: Config, st: dict[str, Any], result: Scan, since: dict[str, float], now: float) -> list[Finding]:
+    """Decline requests that have had nothing arriving for DECLINE_AFTER_DAYS. Returns those declined and
+    records them in `st["declined"]`."""
+    wait = cfg.decline_after_days * 86400
+    due = [
+        f
+        for f in result.findings
+        if f.verdict.code in core.DECLINABLE and now - since.get(str(f.request_id), now) >= wait
+    ]
+    if not wait or not due:
+        return []
+    why = _searching_is_broken(cfg)
+    if why:
+        print(f"[warn] nothing declined while searching is broken. {why}")
+        return []
+    recent = {k: t for k, t in st["declined"].items() if now - t < 86400}
+    due = sorted(due, key=lambda f: since[str(f.request_id)])[: max(core.DECLINES_PER_DAY - len(recent), 0)]
+    done: list[Finding] = []
+    for f in due:
+        if cfg.dry_run:
+            print(f"would decline #{f.request_id} {f.title} (nothing for {cfg.decline_after_days} days)")
+            continue
+        try:
+            _seerr(cfg).decline(f.request_id)
+        except ApiError as e:  # tried again next round
+            print(f"[FAIL] could not decline #{f.request_id}: {e}", file=sys.stderr)
+            continue
+        print(f"declined #{f.request_id} {f.title} (for {f.requester}): {f.verdict.code}")
+        recent[str(f.request_id)] = now
+        done.append(f)
+    st["declined"] = recent
+    return done
+
+
 def run_once(cfg: Config, now: float) -> int:
     with state.locked(cfg.state_file):  # not at the same time as a retry from the API
         return _round(cfg, now)
@@ -162,6 +230,22 @@ def _round(cfg: Config, now: float) -> int:
     st = state.load(cfg.state_file)
     result = _scan(cfg, st, now)
     _print(result, False)
+    since = _stuck_since(st, result, now)
+    declined = _decline(cfg, st, result, since, now)
+    if declined:
+        gone = {f.request_id for f in declined}
+        result = replace(result, findings=[f for f in result.findings if f.request_id not in gone])
+        since = {k: v for k, v in since.items() if int(k) not in gone}
+        if cfg.webhook_url:
+            text = "\n".join(
+                f"Declined {f.title} for {f.requester}: nothing arrived for {cfg.decline_after_days} days. "
+                "Request it again to retry."
+                for f in declined
+            )
+            try:
+                notify.send(cfg.webhook_url, text[:MAX_ALERT_CHARS])
+            except notify.NotifyError as e:
+                print(f"[FAIL] {e}", file=sys.stderr)
     realert = cfg.realert_days * 86400
     sent: list[Finding] = []
     for f in result.findings:
@@ -187,7 +271,7 @@ def _round(cfg: Config, now: float) -> int:
     if result.complete:
         stuck_ids = {str(f.request_id) for f in result.findings if f.verdict.stuck}
         alerts = {k: v for k, v in alerts.items() if k in stuck_ids}
-    state.save(cfg.state_file, {**st, "queue": result.queue, "sig": result.sig, "alerts": alerts})
+    state.save(cfg.state_file, {**st, "queue": result.queue, "sig": result.sig, "alerts": alerts, "stuck": since})
     try:  # a description of what exists (also in dry run); failing to write it never fails the round
         findings.write(findings.path_for(cfg.state_file), findings.build(result.findings, result.complete, alerts, now))
     except OSError as e:
@@ -204,6 +288,7 @@ def retry_once(cfg: Config, request_id: int, now: float, apply: bool = True) -> 
         changed = False
         if apply and not cfg.dry_run and retry.apply(p):
             st["retry"][str(request_id)] = now
+            st["stuck"].pop(str(request_id), None)  # someone cares: the decline clock starts again
             state.save(cfg.state_file, st)
             changed = True
         return retry.Outcome(p.plan.action, p.plan.message, retry.describe(p), changed)
