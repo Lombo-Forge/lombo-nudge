@@ -57,11 +57,11 @@ def test_config_needs_sonarr_or_radarr(env):
 
 def test_env_example_matches_config():
     text = (ROOT / ".env.example").read_text()
-    listed = set(re.findall(rf"^#?\s*{PREFIX}([A-Z_]+)=", text, re.M))
+    listed = set(re.findall(rf"^#?\s*{PREFIX}([A-Z0-9_]+)=", text, re.M))
     assert listed == set(SETTINGS)
     source = (ROOT / "src/lombo_nudge/config.py").read_text()
-    used = set(re.findall(r'get\("([A-Z_]+)"', source)) | set(re.findall(r'_number\(get, "([A-Z_]+)"', source))
-    for app in re.findall(r'_service\(get, "([A-Z]+)"', source):
+    used = set(re.findall(r'get\("([A-Z0-9_]+)"', source)) | set(re.findall(r'_number\(get, "([A-Z0-9_]+)"', source))
+    for app in re.findall(r'_service\(get, "([A-Z0-9_]+)"', source):
         used |= {app + "_URL", app + "_API_KEY"}
     assert used == set(SETTINGS)
 

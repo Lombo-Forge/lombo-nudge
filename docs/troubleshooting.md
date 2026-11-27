@@ -29,7 +29,7 @@ addresses and keys before sharing the output.
 ## Nothing is reported
 
 - Run `plan --all`. If every request is `too_new`, they are still inside the waiting window.
-- `not_checked` means that request's app is not configured (or it is a 4K request, which is skipped).
+- `not_checked` means that request's app is not configured (a 4K movie needs `LOMBO_NUDGE_RADARR_4K_URL`; 4K shows are skipped).
 - Stalls need two rounds: run `run` once, wait, run again.
 - A pass with an error prints `[FAIL]` and reports nothing, on purpose. Fix the service it names.
 

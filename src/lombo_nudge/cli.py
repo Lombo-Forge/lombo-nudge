@@ -36,6 +36,9 @@ def _arrs(cfg: Config) -> dict[str, Arr]:
         out["tv"] = Arr("tv", cfg.sonarr.url, cfg.sonarr.key)
     if cfg.radarr:
         out["movie"] = Arr("movie", cfg.radarr.url, cfg.radarr.key)
+    if cfg.radarr_4k:
+        out["movie4k"] = Arr("movie", cfg.radarr_4k.url, cfg.radarr_4k.key)
+        out["movie4k"].name = "Radarr 4K"
     return out
 
 

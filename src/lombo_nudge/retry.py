@@ -8,7 +8,7 @@ from . import core
 from .clients import Arr, Seerr
 from .findings import clean
 from .http import ApiError
-from .scan import is_bad, request_kind
+from .scan import arr_key, is_bad, media_status, request_kind
 
 CLIENT_DOWN = {"DownloadClientStatusCheck", "DownloadClientCheck"}
 MAX_SEASON_SEARCHES = 6
@@ -40,12 +40,14 @@ def prepare(
     except ApiError as e:
         raise RetryRefused(f"request {request_id}: {e}") from e
     media = req.get("media") or {}
-    if not req or req.get("status") != core.REQUEST_APPROVED or media.get("status") == core.MEDIA_AVAILABLE:
+    if not req or req.get("status") != core.REQUEST_APPROVED or media_status(req) == core.MEDIA_AVAILABLE:
         raise RetryRefused(f"request {request_id} is not an approved request that is still waiting")
     kind = request_kind(req)
-    arr = arrs.get(kind)
-    if arr is None or req.get("is4k"):
-        raise RetryRefused(f"{'Sonarr' if kind == 'tv' else 'Radarr'} is not set up for request {request_id}")
+    app = arr_key(kind, req)
+    arr = arrs.get(app)
+    if arr is None:
+        name = ("Sonarr" if kind == "tv" else "Radarr") + (" 4K" if req.get("is4k") else "")
+        raise RetryRefused(f"{name} is not set up for request {request_id}")
 
     if kind == "tv" and not media.get("tvdbId"):
         raise RetryRefused(f"request {request_id}: Seerr has no TVDB id for this show, so Sonarr cannot be matched")
@@ -64,7 +66,7 @@ def prepare(
             # Leave other people's seasons alone when Sonarr says which season a download is for.
             if kind == "tv" and seasons and rec.get("seasonNumber") is not None and rec["seasonNumber"] not in seasons:
                 continue
-            prev = state["queue"].get(f"{kind}:{rec.get('id')}")
+            prev = state["queue"].get(f"{app}:{rec.get('id')}")
             stalled = bool(prev and (now - prev[1]) / 3600 > rules.stall_after_h)
             queue.append(
                 core.RetryItem(

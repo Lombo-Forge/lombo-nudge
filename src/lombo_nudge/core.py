@@ -18,7 +18,10 @@ REASONS: dict[str, tuple[bool, str]] = {
     "not_approved": (False, "The request is pending or declined, so there is nothing to deliver yet."),
     "available": (False, "Seerr says it is available."),
     "ignored": (False, "Seerr has it blocklisted or deleted."),
-    "not_checked": (False, "The Sonarr or Radarr this request needs is not configured, or it is a 4K request."),
+    "not_checked": (
+        False,
+        "The Sonarr or Radarr this request needs is not configured (4K movies need their own Radarr).",
+    ),
     "too_new": (False, "Approved recently; it gets a day or more before anyone is told."),
     "downloading": (False, "A download is in the queue and moving."),
     "waiting_release": (False, "The movie has not been released yet, so nothing can be found."),

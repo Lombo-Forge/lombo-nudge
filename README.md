@@ -72,7 +72,8 @@ Be aware before you rely on it:
 - **It has never been run against a real Seerr, Sonarr, Radarr or Jellyfin.** The tests use fake servers that return the shapes the code expects. The API shapes were taken from the code this was ported from (which ran against real servers for its own setup) and from the public API documentation. Newer or older versions may differ.
 - **The Jellyfin lookup is the least certain part.** It asks `/Items` with `AnyProviderIdEquals=tmdb.<id>` (or `tvdb.<id>`); that filter format was not confirmed against a live server. If it misbehaves, remove the Jellyfin settings: the reason then falls back to `seerr_not_updated`.
 - **"Quality blocked" is a guess from message text** ("quality" or "not an upgrade" in the queue message). A release rejected earlier by the quality profile appears as `not_found`.
-- **4K requests are skipped** (`not_checked`); a separate 4K Sonarr/Radarr instance is not supported yet.
+- **4K movies** are checked when you set `LOMBO_NUDGE_RADARR_4K_URL` and its key; without them they are skipped
+  (`not_checked`). **4K shows are skipped**: a separate 4K Sonarr is not supported.
 - **Stalls need two rounds** to be noticed, and the state file must survive restarts (mount `/data`).
 - **`retry` removes and blocklists downloads.** The delete and search calls were ported as they were, but have not been run against a real instance here. Read the dry-run plan first.
 - Webhook delivery was tested only against a fake receiver, not Discord or Slack.
