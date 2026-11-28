@@ -34,6 +34,8 @@ SETTINGS = (
     "REALERT_DAYS",
     "DECLINE_AFTER_DAYS",
     "RETRY_COOLDOWN_MINUTES",
+    "FALLBACK_TAG",
+    "FALLBACK_AFTER_MINUTES",
     "STATE_FILE",
     "API_TOKEN",
     "API_BIND",
@@ -70,6 +72,8 @@ class Config:
     api_bind: str = DEFAULT_BIND  # host:port `serve` listens on
     decline_after_days: int = 0  # 0 = never decline anything
     radarr_4k: Service | None = None  # a second Radarr that gets the 4K movie requests
+    fallback_tag: str = ""  # tag added to a title nothing is found for; empty = off
+    fallback_after_minutes: int = 30
 
 
 def _truthy(value: str, name: str) -> bool:
@@ -185,4 +189,6 @@ def from_env(env: dict[str, str]) -> Config:
         api_bind=bind,
         radarr_4k=_service(get, "RADARR_4K"),
         decline_after_days=_number(get, "DECLINE_AFTER_DAYS", "0", 0),
+        fallback_tag=get("FALLBACK_TAG"),
+        fallback_after_minutes=_number(get, "FALLBACK_AFTER_MINUTES", "30", 5),
     )

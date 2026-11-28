@@ -10,6 +10,7 @@
 - [What it remembers](#what-it-remembers)
 - [For other programs](#for-other-programs)
 - [Declining what never arrives](#declining-what-never-arrives)
+- [Fallback tag](#fallback-tag)
 
 ## The loop
 
@@ -115,10 +116,24 @@ document, and let a tool preview or trigger a retry. The exact shape and the pro
 ## Declining what never arrives
 
 Off by default. With `LOMBO_NUDGE_DECLINE_AFTER_DAYS=7`, a request that has had nothing arriving for seven days
-(`not_found` or `missing_in_arr`) is declined in Seerr, so it leaves the stuck list. Seerr tells the person; they
-can request it again. A partly arrived show is never declined, nor is a show still releasing (anything Sonarr does not mark "ended",
+(`not_found` or `missing_in_arr`) is removed from Seerr (a DELETE: Seerr only declines pending requests and answers 409 for an approved one), so it
+leaves the stuck list. Seerr does **not** tell the person; with a webhook set, LomboNudge announces it. They can request it again. A partly arrived show is never declined, nor is a show still releasing (anything Sonarr does not mark "ended",
 including one between seasons, or one Sonarr does not have). Nothing is removed from Sonarr or Radarr.
 
 - The days are counted from when LomboNudge first saw it that way, not from the request date. A `retry` starts them again.
 - Nothing is declined while Sonarr or Radarr report that indexers or the download client are failing.
 - At most 3 a day. Dry run only prints `would decline`. `plan` shows how many days each one has left.
+
+## Fallback tag
+
+Off unless `LOMBO_NUDGE_FALLBACK_TAG` names a tag. It lets a private tracker be the second choice: give the same tag
+to that indexer in Prowlarr or Sonarr/Radarr (an indexer with a tag is only searched for titles with that tag).
+
+- An approved request that is still missing files, with **nothing queued** for `LOMBO_NUDGE_FALLBACK_AFTER_MINUTES`
+  (default 30, at least 5), gets the tag in Sonarr or Radarr and one search (one per season for a show).
+- The tag comes off again when nothing is missing any more. A tag you added by hand is never touched.
+- Downloads are never removed. A dead download counts as queued, so it falls back only once it is removed
+  (a `retry`, or a queue cleaner).
+- Nothing happens while Sonarr or Radarr report that indexers or the download client are failing.
+- At most 10 a day. Checked every 5 minutes with `run --loop`. Dry run only prints `would tag`.
+- The tag must already exist in Sonarr and Radarr; `doctor` checks.

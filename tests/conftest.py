@@ -15,7 +15,7 @@ Route = Any  # a JSON-able value, or a callable(query) returning one; an int mea
 
 
 class Fake:
-    """One fake HTTP service. `routes` maps a GET path to its answer; other methods are recorded and answered 200."""
+    """One fake HTTP service. `routes` maps a GET path to its answer; POST, PUT, DELETE are recorded, answered 200."""
 
     def __init__(self, header: str = "X-Api-Key", key: str | None = "good-key", open_paths: tuple[str, ...] = ()):
         self.calls: list[dict[str, Any]] = []
@@ -56,7 +56,7 @@ class Fake:
                     return self._reply(value)
                 return self._reply(200, value)
 
-            do_GET = do_POST = do_DELETE = _handle
+            do_GET = do_POST = do_DELETE = do_PUT = _handle
 
         self.server = HTTPServer(("127.0.0.1", 0), Handler)
         self.url = f"http://127.0.0.1:{self.server.server_port}"

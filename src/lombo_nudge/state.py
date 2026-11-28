@@ -21,7 +21,17 @@ class StateError(Exception):
 
 
 def empty() -> dict[str, Any]:
-    return {"queue": {}, "sig": {}, "alerts": {}, "retry": {}, "stuck": {}, "declined": {}}
+    return {
+        "queue": {},
+        "sig": {},
+        "alerts": {},
+        "retry": {},
+        "stuck": {},
+        "declined": {},
+        "fallback": {},
+        "tagged": {},
+        "escalated": {},
+    }
 
 
 def load(path: str) -> dict[str, Any]:

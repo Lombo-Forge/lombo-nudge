@@ -18,7 +18,7 @@ from dataclasses import replace
 from functools import partial
 from typing import Any
 
-from . import __version__, api, core, findings, notify, retry, state
+from . import __version__, api, core, fallback, findings, notify, retry, state
 from .clients import Arr, Seerr
 from .config import Config, ConfigError, from_env, is_loopback, parse_bind, token_problem
 from .http import ApiError
@@ -26,6 +26,7 @@ from .jellyfin import Jellyfin
 from .scan import Finding, Scan, scan
 
 MAX_ALERT_CHARS = 1800
+FALLBACK_CHECK_SECONDS = 300  # how often the fallback looks, between rounds
 
 
 def _seerr(cfg: Config) -> Seerr:
@@ -95,6 +96,19 @@ def doctor(cfg: Config) -> int:
         print(f"[ ok ] declines: requests with nothing arriving for {cfg.decline_after_days} days")
     else:
         print("[ ok ] declines: off (LOMBO_NUDGE_DECLINE_AFTER_DAYS=0)")
+    if cfg.fallback_tag:
+        for arr in _arrs(cfg).values():
+            try:
+                if arr.tag_id(cfg.fallback_tag) is None:
+                    raise ApiError(
+                        f"no tag '{cfg.fallback_tag}'. Add it, and put it on the indexer for the second choice."
+                    )
+                print(f"[ ok ] fallback in {arr.name}: tag '{cfg.fallback_tag}' exists")
+            except ApiError as e:
+                print(f"[FAIL] fallback in {arr.name}: {e}")
+                ok = False
+    else:
+        print("[ ok ] fallback: off (no LOMBO_NUDGE_FALLBACK_TAG)")
     print(f"[ ok ] mode: {'dry run (nothing is sent or changed)' if cfg.dry_run else 'LIVE'}")
     return 0 if ok else 1
 
@@ -217,6 +231,28 @@ def _decline(cfg: Config, st: dict[str, Any], result: Scan, since: dict[str, flo
     return done
 
 
+def fallback_once(cfg: Config, now: float) -> None:
+    if not cfg.fallback_tag:
+        return
+    with state.locked(cfg.state_file):
+        st = state.load(cfg.state_file)
+        try:
+            lines = fallback.run(
+                _seerr(cfg),
+                _arrs(cfg),
+                st,
+                now,
+                cfg.fallback_tag,
+                cfg.fallback_after_minutes * 60,
+                cfg.dry_run,
+                _searching_is_broken(cfg),
+            )
+            for line in lines:
+                print(line, flush=True)
+        finally:  # a tag already added is remembered even if a later call fails
+            state.save(cfg.state_file, st)
+
+
 def run_once(cfg: Config, now: float) -> int:
     with state.locked(cfg.state_file):  # not at the same time as a retry from the API
         return _round(cfg, now)
@@ -234,7 +270,8 @@ def _round(cfg: Config, now: float) -> int:
         since = {k: v for k, v in since.items() if int(k) not in gone}
         if cfg.webhook_url:
             text = "\n".join(
-                f"Declined {f.title} for {f.requester}: nothing arrived for {cfg.decline_after_days} days. "
+                f"Removed the request for {f.title} ({f.requester}): nothing arrived for "
+                f"{cfg.decline_after_days} days. "
                 "Request it again to retry."
                 for f in declined
             )
@@ -357,16 +394,21 @@ def main(argv: list[str] | None = None, env: dict[str, str] | None = None) -> in
             return serve(cfg)
         if args.cmd == "retry":
             return do_retry(cfg, args.request_id, time.time())
+        next_round = 0.0
         while True:
             try:
-                run_once(cfg, time.time())
+                if time.time() >= next_round:
+                    next_round = time.time() + cfg.interval_seconds
+                    run_once(cfg, time.time())
+                fallback_once(cfg, time.time())
             except (ApiError, notify.NotifyError, state.StateError) as e:
                 print(f"[FAIL] {e}", file=sys.stderr)  # a loop survives one bad round
                 if not args.loop:
                     return 1
             if not args.loop:
                 return 0
-            time.sleep(cfg.interval_seconds)
+            wait = max(next_round - time.time(), 1.0)
+            time.sleep(min(wait, FALLBACK_CHECK_SECONDS) if cfg.fallback_tag else wait)
     except (ApiError, state.StateError) as e:
         print(f"[FAIL] {e}", file=sys.stderr)
         return 1
