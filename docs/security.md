@@ -8,6 +8,7 @@
 - [What it never logs](#what-it-never-logs)
 - [Reaching it from a web page](#reaching-it-from-a-web-page)
 - [Limits of this design](#limits-of-this-design)
+- [What it changes](#what-it-changes)
 - [The files it writes](#the-files-it-writes)
 
 This is the author's own threat model for the optional HTTP API (`lombo-nudge serve`). There has been no
@@ -69,6 +70,10 @@ If the API is not behind a proxy that overwrites the header, a visitor can send 
 - **Changing the token** means restarting `serve` and updating whatever adds it.
 - Python's `http.server` is not built for the open internet. Never publish this port.
 - The lock file is an advisory `flock`: it works on a local disk or a normal Docker volume, and may not on some network file systems.
+
+## What it changes
+
+Only with `DRY_RUN=false`: `retry` removes and blocklists stalled downloads and starts searches; `DECLINE_AFTER_DAYS` deletes requests in Seerr; `FALLBACK_TAG` adds and removes one tag on titles in Sonarr and Radarr and starts searches. Nothing else.
 
 ## The files it writes
 

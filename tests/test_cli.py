@@ -143,13 +143,16 @@ def test_outage_skips_the_pass_instead_of_alerting(env, world, capsys):
 def test_loop_survives_one_bad_round(env, world, monkeypatch, capsys):
     world.seerr.routes["/api/v1/request"] = 500
     calls = []
+    clock = [time.time()]
 
-    def fake_sleep(_):
+    def fake_sleep(seconds):
         calls.append(1)
+        clock[0] += seconds  # the loop decides from the clock when the next round is due
         if len(calls) == 2:
             raise KeyboardInterrupt
 
     monkeypatch.setattr(time, "sleep", fake_sleep)
+    monkeypatch.setattr(time, "time", lambda: clock[0])
     with contextlib.suppress(KeyboardInterrupt):
         main(["run", "--loop"], env)
     assert capsys.readouterr().err.count("[FAIL]") == 2
@@ -251,7 +254,7 @@ def test_retry_client_down_and_missing(env, world, capsys):
 def test_state_file_format(env, tmp_path):
     main(["run"], env)
     data = json.loads((tmp_path / "state.json").read_text())
-    assert set(data) == {"queue", "sig", "alerts", "retry", "stuck", "declined"}
+    assert set(data) == {"queue", "sig", "alerts", "retry", "stuck", "declined", "fallback", "tagged", "escalated"}
 
 
 def _backlog(world, n=40):

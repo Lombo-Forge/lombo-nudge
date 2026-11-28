@@ -11,6 +11,8 @@ DAY = 86400
 
 
 def declines(world):
+    # a DELETE: real Seerr answers 409 to a decline of an approved request
+    assert all(c["method"] == "DELETE" for c in world.seerr.changes())
     return [c["path"] for c in world.seerr.changes()]
 
 
@@ -25,8 +27,8 @@ def test_declines_only_after_the_wait_and_only_where_nothing_arrives(world, env)
     assert declines(world) == []  # old requests, but only just seen stuck
     cli.run_once(cfg, now + 8 * DAY)
     # 1 not_found and 3 missing_in_arr; 2 has a failed download in the queue
-    assert sorted(declines(world)) == ["/api/v1/request/1/decline", "/api/v1/request/3/decline"]
-    assert any("Declined Test Movie for Sam" in c["body"]["content"] for c in world.hook.calls)
+    assert sorted(declines(world)) == ["/api/v1/request/1", "/api/v1/request/3"]
+    assert any("Removed the request for Test Movie (Sam)" in c["body"]["content"] for c in world.hook.calls)
 
 
 def test_off_by_default_and_dry_run_declines_nothing(world, env, capsys):
@@ -68,7 +70,7 @@ def test_a_retry_starts_the_wait_again(world, env):
     cli.retry_once(cfg, 1, now + 6 * DAY)
     cli.run_once(cfg, now + 6 * DAY + 1)
     cli.run_once(cfg, now + 8 * DAY)
-    assert "/api/v1/request/1/decline" not in declines(world)
+    assert "/api/v1/request/1" not in declines(world)
 
 
 def test_a_partly_arrived_show_is_never_declined(world, env):
@@ -81,7 +83,7 @@ def test_a_partly_arrived_show_is_never_declined(world, env):
     assert [f["reason"] for f in cli.findings_doc(cfg, now + 20 * DAY)["findings"] if f["request_id"] == 2] == [
         "partly_here"
     ]
-    assert "/api/v1/request/2/decline" not in declines(world)
+    assert "/api/v1/request/2" not in declines(world)
 
 
 @pytest.mark.parametrize(("status", "declined"), [("continuing", False), ("upcoming", False), ("ended", True)])
@@ -91,4 +93,4 @@ def test_a_show_still_releasing_is_never_declined(world, env, status, declined):
     cfg, now = cfg_for(env), time.time()
     cli.run_once(cfg, now)
     cli.run_once(cfg, now + 8 * DAY)
-    assert ("/api/v1/request/2/decline" in declines(world)) is declined
+    assert ("/api/v1/request/2" in declines(world)) is declined

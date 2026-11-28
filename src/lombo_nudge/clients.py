@@ -1,5 +1,5 @@
-"""Seerr, Sonarr and Radarr clients. Read-only except Arr.delete_queue() and Arr.command() (the retry
-command) and Seerr.decline() (DECLINE_AFTER_DAYS), all only when DRY_RUN=false."""
+"""Seerr, Sonarr and Radarr clients. Read-only except Arr.delete_queue() (retry), Arr.command() (retry and
+fallback), Arr.set_tag() (fallback) and Seerr.decline() (DECLINE_AFTER_DAYS), all only when DRY_RUN=false."""
 
 from typing import Any, cast
 
@@ -43,7 +43,8 @@ class Seerr(Client):
         return out, False
 
     def decline(self, request_id: int) -> None:
-        self.request("POST", f"/api/v1/request/{request_id}/decline")
+        """Deletes the request: Seerr only declines pending ones (409), and these are approved."""
+        self.request("DELETE", f"/api/v1/request/{request_id}")
 
     def title(self, kind: str, tmdb_id: int | None) -> str:
         if tmdb_id is None:
@@ -97,6 +98,15 @@ class Arr(Client):
             {"removeFromClient": "true", "blocklist": "true", "skipRedownload": "false"},
             {"ids": ids},
         )
+
+    def tag_id(self, label: str) -> int | None:
+        tags = self.get("/api/v3/tag") or []
+        return next((int(t["id"]) for t in tags if str(t.get("label")).lower() == label.lower()), None)
+
+    def set_tag(self, item_id: int, tag_id: int, add: bool) -> None:
+        noun, ids = ("series", "seriesIds") if self.kind == "tv" else ("movie", "movieIds")
+        body = {ids: [item_id], "tags": [tag_id], "applyTags": "add" if add else "remove"}
+        self.request("PUT", f"/api/v3/{noun}/editor", body=body)
 
     def command(self, body: dict[str, Any]) -> None:
         self.request("POST", "/api/v3/command", body=body)

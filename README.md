@@ -58,7 +58,7 @@ Every reason code is explained in [docs/how-it-works.md](docs/how-it-works.md).
 
 ## Settings
 
-Everything is an environment variable, listed with defaults in [.env.example](.env.example). Thresholds (hours before "nothing found", "partly here", "stalled"), the re-alert wait and the retry cooldown are settings too. More in [docs/setup.md](docs/setup.md).
+Everything is an environment variable, listed with defaults in [.env.example](.env.example). Thresholds (hours before "nothing found", "partly here", "stalled"), the re-alert wait and the retry cooldown, the decline wait and the fallback tag (`LOMBO_NUDGE_FALLBACK_TAG`, see [how it works](docs/how-it-works.md#fallback-tag)) are settings too. More in [docs/setup.md](docs/setup.md).
 
 | Setting | Default | What it does |
 |---|---|---|
